@@ -1,6 +1,6 @@
 // script.js
 
-const questions = [
+const originalQuestions = [
     { term: "a/an", definition: "Without, not" },
     { term: "ab", definition: "Away from" },
     { term: "Abdomen/o", definition: "Abdomen" },
@@ -189,6 +189,7 @@ const questions = [
     { term: "-y", definition: "Condition or process" }
 ];
 
+let questions = [...originalQuestions];
 let currentQuestionIndex = 0;
 let score = 0;
 let incorrectAnswers = [];
@@ -198,7 +199,7 @@ const optionsContainer = document.getElementById("options");
 const nextButton = document.getElementById("next-button");
 const scoreElement = document.getElementById("score");
 
-// Shuffle questions so they appear in random order
+// Shuffle initial questions
 shuffleArray(questions);
 
 function loadQuestion() {
@@ -279,12 +280,13 @@ nextButton.addEventListener("click", () => {
 });
 
 function endQuiz() {
-    questionElement.textContent = "Quiz Complete!";
-    optionsContainer.innerHTML = `<p>Your final score is ${score}/${questions.length}</p>`;
+    questionElement.textContent = "Round Complete!";
+    optionsContainer.innerHTML = `<p>Your score for this round is ${score}/${questions.length + incorrectAnswers.length}</p>`;
 
     if (incorrectAnswers.length > 0) {
+        // User got some wrong
         const wrongList = document.createElement('div');
-        wrongList.innerHTML = "<h2>You missed these questions:</h2>";
+        wrongList.innerHTML = "<h2>You missed these terms:</h2>";
         const ul = document.createElement('ul');
 
         incorrectAnswers.forEach(item => {
@@ -295,9 +297,37 @@ function endQuiz() {
 
         wrongList.appendChild(ul);
         optionsContainer.appendChild(wrongList);
-    }
 
-    nextButton.style.display = "none";
+        // Create a continue button to retry missed terms
+        const continueButton = document.createElement('button');
+        continueButton.textContent = "Continue with Missed Terms";
+        continueButton.addEventListener("click", retryMissedTerms);
+        optionsContainer.appendChild(continueButton);
+    } else {
+        // No incorrect answers - all correct this round
+        optionsContainer.innerHTML += `<p>Congratulations! You've correctly answered all terms.</p>`;
+        nextButton.style.display = "none";
+    }
+}
+
+function retryMissedTerms() {
+    // Set questions to the missed terms only
+    questions = incorrectAnswers.map(item => {
+        return {term: item.term, definition: item.correct};
+    });
+    incorrectAnswers = [];
+    currentQuestionIndex = 0;
+
+    // Shuffle the missed terms for the next round
+    shuffleArray(questions);
+
+    // Clear out the options container and load the first missed question
+    optionsContainer.innerHTML = "";
+    questionElement.textContent = "New Round with Missed Terms";
+    nextButton.disabled = true;
+
+    // Delay loading next question to show the heading briefly
+    setTimeout(loadQuestion, 500);
 }
 
 // Utility function to shuffle array
