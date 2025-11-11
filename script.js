@@ -67,7 +67,7 @@ function loadQuestion() {
     }
 
     currentQuestion = upcomingQuestions[0];
-    questionElement.textContent = `What does "${currentQuestion.term}" mean?`;
+    questionElement.textContent = `What are the values for "${currentQuestion.term}"?`;
 
     const { correctDefinition, allOptions } = generateOptions(currentQuestion);
 
