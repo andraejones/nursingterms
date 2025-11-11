@@ -189,41 +189,61 @@ const originalQuestions = [
     { term: "-y", definition: "Condition or process" }
 ];
 
-let questions = [...originalQuestions];
-let currentQuestionIndex = 0;
-let score = 0;
-let incorrectAnswers = [];
+const STREAK_TARGET = 15;
+const STREAKS_TO_WIN = 3;
+
+let upcomingQuestions = shuffleArray([...originalQuestions]);
+let currentQuestion = null;
+let currentStreak = 0;
+let completedStreaks = 0;
+let totalCorrect = 0;
+let totalAttempted = 0;
+let gameOver = false;
+
+const questionStats = new Map();
+originalQuestions.forEach(question => {
+    questionStats.set(question.term, {
+        term: question.term,
+        definition: question.definition,
+        correct: 0,
+        incorrect: 0
+    });
+});
 
 const questionElement = document.getElementById("question");
 const optionsContainer = document.getElementById("options");
 const nextButton = document.getElementById("next-button");
 const scoreElement = document.getElementById("score");
 
-// Shuffle initial questions
-shuffleArray(questions);
-
 function loadQuestion() {
-    const question = questions[currentQuestionIndex];
-    questionElement.textContent = `What does "${question.term}" mean?`;
+    if (gameOver) {
+        return;
+    }
 
-    const { correctDefinition, allOptions } = generateOptions(question);
+    if (upcomingQuestions.length === 0) {
+        upcomingQuestions = shuffleArray([...originalQuestions]);
+    }
 
-    // Clear old options
+    currentQuestion = upcomingQuestions[0];
+    questionElement.textContent = `What does "${currentQuestion.term}" mean?`;
+
+    const { correctDefinition, allOptions } = generateOptions(currentQuestion);
+
     optionsContainer.innerHTML = "";
 
     allOptions.forEach(option => {
         const button = document.createElement("button");
         button.textContent = option;
-        button.addEventListener("click", () => handleAnswer(option === correctDefinition, button, correctDefinition, question));
+        button.addEventListener("click", () => handleAnswer(option === correctDefinition, button, correctDefinition));
         optionsContainer.appendChild(button);
     });
 
     nextButton.disabled = true;
+    updateScoreboard();
 }
 
 function generateOptions(question) {
     const correctDefinition = question.definition;
-    // get 3 random distractors from the other terms
     const distractors = getRealDistractors(correctDefinition, 3);
     const allOptions = [correctDefinition, ...distractors];
     shuffleArray(allOptions);
@@ -231,7 +251,7 @@ function generateOptions(question) {
 }
 
 function getRealDistractors(correctDefinition, count) {
-    const filtered = questions.filter(q => q.definition !== correctDefinition);
+    const filtered = originalQuestions.filter(q => q.definition !== correctDefinition);
     const chosen = [];
     while (chosen.length < count) {
         const randIndex = Math.floor(Math.random() * filtered.length);
@@ -243,21 +263,50 @@ function getRealDistractors(correctDefinition, count) {
     return chosen;
 }
 
-function handleAnswer(isCorrect, button, correctDefinition, question) {
-    button.classList.add(isCorrect ? "correct" : "incorrect");
-    if (isCorrect) {
-        score++;
-    } else {
-        highlightCorrectAnswer(correctDefinition);
-        incorrectAnswers.push({
-            term: question.term,
-            correct: correctDefinition
-        });
+function handleAnswer(isCorrect, button, correctDefinition) {
+    if (gameOver || !currentQuestion) {
+        return;
     }
 
-    scoreElement.textContent = `Score: ${score}`;
-    Array.from(optionsContainer.children).forEach(btn => btn.disabled = true);
-    nextButton.disabled = false;
+    button.classList.add(isCorrect ? "correct" : "incorrect");
+    totalAttempted++;
+
+    const stats = questionStats.get(currentQuestion.term);
+
+    if (isCorrect) {
+        totalCorrect++;
+        currentStreak++;
+        stats.correct++;
+        handleCompletedQuestion();
+    } else {
+        stats.incorrect++;
+        currentStreak = 0;
+        highlightCorrectAnswer(correctDefinition);
+        resetQueueAfterMistake();
+    }
+
+    Array.from(optionsContainer.querySelectorAll("button")).forEach(btn => btn.disabled = true);
+    nextButton.disabled = gameOver;
+    updateScoreboard();
+}
+
+function handleCompletedQuestion() {
+    // Remove the question that was just answered from the front of the queue
+    upcomingQuestions.shift();
+
+    if (currentStreak === STREAK_TARGET) {
+        completedStreaks++;
+        currentStreak = 0;
+
+        if (completedStreaks === STREAKS_TO_WIN) {
+            endGame();
+            return;
+        }
+
+        upcomingQuestions = shuffleArray([...originalQuestions]);
+        questionElement.textContent = "Streak complete! Press Next to start a fresh set.";
+        optionsContainer.innerHTML = "";
+    }
 }
 
 function highlightCorrectAnswer(correctDefinition) {
@@ -270,64 +319,73 @@ function highlightCorrectAnswer(correctDefinition) {
     }
 }
 
-nextButton.addEventListener("click", () => {
-    currentQuestionIndex++;
-    if (currentQuestionIndex < questions.length) {
-        loadQuestion();
-    } else {
-        endQuiz();
-    }
-});
+function resetQueueAfterMistake() {
+    const missedQuestion = currentQuestion;
 
-function endQuiz() {
-    questionElement.textContent = "Round Complete!";
-    optionsContainer.innerHTML = `<p>Your score for this round is ${score}/${questions.length + incorrectAnswers.length}</p>`;
+    let newQueue = shuffleArray([...originalQuestions]);
+    newQueue = newQueue.filter(q => q.term !== missedQuestion.term);
 
-    if (incorrectAnswers.length > 0) {
-        // User got some wrong
-        const wrongList = document.createElement('div');
-        wrongList.innerHTML = "<h2>You missed these terms:</h2>";
-        const ul = document.createElement('ul');
+    const insertionRange = Math.min(STREAK_TARGET, newQueue.length + 1);
+    const insertionIndex = Math.floor(Math.random() * insertionRange);
+    newQueue.splice(insertionIndex, 0, missedQuestion);
 
-        incorrectAnswers.forEach(item => {
-            const li = document.createElement('li');
-            li.innerHTML = `<strong>${item.term}</strong>: Correct definition is "${item.correct}"`;
-            ul.appendChild(li);
-        });
-
-        wrongList.appendChild(ul);
-        optionsContainer.appendChild(wrongList);
-
-        // Create a continue button to retry missed terms
-        const continueButton = document.createElement('button');
-        continueButton.textContent = "Continue with Missed Terms";
-        continueButton.addEventListener("click", retryMissedTerms);
-        optionsContainer.appendChild(continueButton);
-    } else {
-        // No incorrect answers - all correct this round
-        optionsContainer.innerHTML += `<p>Congratulations! You've correctly answered all terms.</p>`;
-        nextButton.style.display = "none";
-    }
+    upcomingQuestions = newQueue;
 }
 
-function retryMissedTerms() {
-    // Set questions to the missed terms only
-    questions = incorrectAnswers.map(item => {
-        return {term: item.term, definition: item.correct};
-    });
-    incorrectAnswers = [];
-    currentQuestionIndex = 0;
+function updateScoreboard() {
+    scoreElement.textContent = `Streak: ${currentStreak}/${STREAK_TARGET} | Runs: ${completedStreaks}/${STREAKS_TO_WIN} | Correct: ${totalCorrect}`;
+}
 
-    // Shuffle the missed terms for the next round
-    shuffleArray(questions);
+nextButton.addEventListener("click", () => {
+    if (gameOver) {
+        return;
+    }
 
-    // Clear out the options container and load the first missed question
-    optionsContainer.innerHTML = "";
-    questionElement.textContent = "New Round with Missed Terms";
+    currentQuestion = null;
+    loadQuestion();
+});
+
+function endGame() {
+    gameOver = true;
     nextButton.disabled = true;
 
-    // Delay loading next question to show the heading briefly
-    setTimeout(loadQuestion, 500);
+    questionElement.textContent = "Game Complete!";
+
+    const accuracy = totalAttempted ? Math.round((totalCorrect / totalAttempted) * 100) : 0;
+
+    const summary = document.createElement("div");
+    summary.innerHTML = `
+        <p>You achieved three streaks of ${STREAK_TARGET} correct answers!</p>
+        <p>Total Questions Answered: ${totalAttempted}</p>
+        <p>Overall Accuracy: ${accuracy}%</p>
+    `;
+
+    const troubleSpots = Array.from(questionStats.values())
+        .filter(stat => stat.incorrect > 0)
+        .sort((a, b) => b.incorrect - a.incorrect || a.term.localeCompare(b.term));
+
+    optionsContainer.innerHTML = "";
+    optionsContainer.appendChild(summary);
+
+    if (troubleSpots.length > 0) {
+        const header = document.createElement("h2");
+        header.textContent = "Terms to Review";
+        optionsContainer.appendChild(header);
+
+        const list = document.createElement("ul");
+        troubleSpots.forEach(stat => {
+            const listItem = document.createElement("li");
+            listItem.innerHTML = `<strong>${stat.term}</strong>: ${stat.definition} — missed ${stat.incorrect} time(s)`;
+            list.appendChild(listItem);
+        });
+        optionsContainer.appendChild(list);
+    } else {
+        const perfect = document.createElement("p");
+        perfect.textContent = "Perfect work! You never missed a term.";
+        optionsContainer.appendChild(perfect);
+    }
+
+    updateScoreboard();
 }
 
 // Utility function to shuffle array
